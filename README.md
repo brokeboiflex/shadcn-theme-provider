@@ -2,6 +2,8 @@
 
 Dual-axis theme provider for [shadcn/ui](https://ui.shadcn.com) — **mode** (light/dark/system) + **palette** (runtime CSS switching).
 
+**[Live Demo](https://brokeboiflex.github.io/shadcn-theme-provider-demo/)**
+
 - Handles both dark mode and color palette switching independently
 - Runtime CSS injection — no build step needed for new palettes
 - Ships a Tailwind v4 token bridge CSS file
