@@ -1,0 +1,63 @@
+{
+  "name": "shadcn-theme-provider",
+  "version": "0.1.0",
+  "description": "Dual-axis theme provider for shadcn/ui — mode (light/dark/system) + palette (runtime CSS switching)",
+  "author": "nondefault",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./tailwind.css": "./css/tailwind.css"
+  },
+  "files": [
+    "dist",
+    "css",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "shadcn",
+    "shadcn-ui",
+    "theme",
+    "theme-provider",
+    "dark-mode",
+    "palette",
+    "tailwindcss",
+    "react"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nondefault/shadcn-theme-provider"
+  },
+  "homepage": "https://github.com/nondefault/shadcn-theme-provider#readme"
+}
