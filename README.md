@@ -7,9 +7,10 @@ Dual-axis theme provider for [shadcn/ui](https://ui.shadcn.com) — **mode** (li
 - Handles both dark mode and color palette switching independently
 - Runtime CSS injection — no build step needed for new palettes
 - Ships a Tailwind v4 token bridge CSS file
-- SSR-safe, zero runtime dependencies (React peer dep only)
+- SSR/Next.js no-FOUC support — a pre-hydration inline script applies the persisted mode + palette before first paint
+- Zero runtime dependencies (React peer dep only)
 - System preference listener for live dark mode updates
-- CSP nonce support for injected stylesheets
+- CSP nonce support for injected stylesheets and the init script
 
 ## Install
 
@@ -96,6 +97,43 @@ function ThemeSwitcher() {
   );
 }
 ```
+
+## Next.js / SSR — no flash of unthemed content
+
+Effects only run after hydration, so a naive client-side provider leaves
+server-rendered HTML unthemed until JavaScript loads — a visible flash of
+wrong colors (FOUC).
+
+`<ThemeProvider>` prevents this by rendering a tiny inline `<script>` that
+runs **before first paint**: it reads the persisted mode and palette from
+`localStorage`, applies the `.dark`/`.light` class (or `data-mode`
+attribute) to `<html>`, and injects the palette stylesheet `<link>`. The
+provider's own effects detect the already-applied state and skip
+re-injection, so nothing flickers on hydration.
+
+The only setup needed: add `suppressHydrationWarning` to `<html>`, since
+the script updates its class/attributes before React hydrates (same
+requirement as next-themes):
+
+```tsx
+// app/layout.tsx
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider themes={themes} defaultMode="light" defaultPalette="default">
+          {children}
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+> The script's content is built exclusively from the props you pass
+> (`themes`, storage keys, defaults) — serialized with `JSON.stringify`
+> and `<`-escaped. Don't feed it untrusted user input. For strict CSP,
+> pass a `nonce` — it's applied to the init script and injected links.
 
 ## Palette CSS Files
 

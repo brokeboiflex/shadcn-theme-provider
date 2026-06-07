@@ -1,6 +1,6 @@
 {
   "name": "shadcn-theme-provider",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dual-axis theme provider for shadcn/ui — mode (light/dark/system) + palette (runtime CSS switching)",
   "author": "brokeboiflex",
   "license": "MIT",

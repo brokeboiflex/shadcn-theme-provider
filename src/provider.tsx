@@ -7,6 +7,7 @@ import {
   useState,
 } from "react"
 import type { ThemeMode, ThemeProviderProps, ThemeProviderState } from "./types"
+import { themeInitScript } from "./script"
 
 const LINK_ATTR = "data-shadcn-palette"
 const PALETTE_ATTR = "data-palette"
@@ -103,6 +104,18 @@ export function ThemeProvider({
 
     const root = document.documentElement
 
+    // Skip if this palette is already applied (e.g. by the pre-hydration
+    // init script) — removing and re-adding the link would cause a flash
+    const existing = document.querySelector<HTMLLinkElement>(`link[${LINK_ATTR}]`)
+    if (
+      existing &&
+      existing.getAttribute(LINK_ATTR) === palette &&
+      existing.getAttribute("href") === href
+    ) {
+      root.setAttribute(PALETTE_ATTR, palette)
+      return
+    }
+
     // Optionally disable transitions during switch
     if (disableTransitionOnChange) {
       root.setAttribute(SWITCHING_ATTR, "")
@@ -164,8 +177,37 @@ export function ThemeProvider({
     [mode, setMode, palette, setPalette, resolvedMode, themeNames]
   )
 
+  // ── Pre-hydration init script (no-FOUC for SSR) ───────────────────
+  // Applies the persisted mode + palette before first paint. Inline
+  // scripts are never re-executed on hydration, so this runs exactly
+  // once per page load.
+  const initScript = useMemo(
+    () =>
+      themeInitScript({
+        themes,
+        defaultMode,
+        defaultPalette: fallbackPalette,
+        modeStorageKey,
+        paletteStorageKey,
+        attribute,
+      }),
+    [
+      themes,
+      defaultMode,
+      fallbackPalette,
+      modeStorageKey,
+      paletteStorageKey,
+      attribute,
+    ]
+  )
+
   return (
     <ThemeProviderContext.Provider value={value}>
+      <script
+        suppressHydrationWarning
+        nonce={nonce}
+        dangerouslySetInnerHTML={{ __html: initScript }}
+      />
       {children}
     </ThemeProviderContext.Provider>
   )
