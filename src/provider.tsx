@@ -1,5 +1,6 @@
 import {
   createContext,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -12,6 +13,63 @@ import { themeInitScript } from "./script"
 const LINK_ATTR = "data-shadcn-palette"
 const PALETTE_ATTR = "data-palette"
 const SWITCHING_ATTR = "data-switching"
+
+// ── Pre-hydration init script (no-FOUC for SSR) ─────────────────────
+// Applies the persisted mode + palette before first paint. Rendered as a
+// memoized component keyed only on the *stable* config props — NOT the
+// provider's mode/palette state — so it renders during SSR and the initial
+// hydration pass (matching the server HTML, no mismatch) but is never
+// re-rendered on the client when the theme changes. Re-rendering a <script>
+// during a client render triggers React's "scripts inside React components
+// are never executed when rendering on the client" warning; memoization
+// avoids it while the inline script still runs exactly once per page load.
+type ThemeScriptProps = {
+  themes: Record<string, string>
+  defaultMode: ThemeMode
+  defaultPalette: string
+  modeStorageKey: string
+  paletteStorageKey: string
+  attribute: "class" | "data-mode"
+  nonce?: string
+}
+
+const ThemeScript = memo(function ThemeScript({
+  themes,
+  defaultMode,
+  defaultPalette,
+  modeStorageKey,
+  paletteStorageKey,
+  attribute,
+  nonce,
+}: ThemeScriptProps) {
+  const initScript = useMemo(
+    () =>
+      themeInitScript({
+        themes,
+        defaultMode,
+        defaultPalette,
+        modeStorageKey,
+        paletteStorageKey,
+        attribute,
+      }),
+    [
+      themes,
+      defaultMode,
+      defaultPalette,
+      modeStorageKey,
+      paletteStorageKey,
+      attribute,
+    ]
+  )
+
+  return (
+    <script
+      suppressHydrationWarning
+      nonce={nonce}
+      dangerouslySetInnerHTML={{ __html: initScript }}
+    />
+  )
+})
 
 function getSystemMode(): "light" | "dark" {
   if (typeof window === "undefined") return "light"
@@ -177,36 +235,16 @@ export function ThemeProvider({
     [mode, setMode, palette, setPalette, resolvedMode, themeNames]
   )
 
-  // ── Pre-hydration init script (no-FOUC for SSR) ───────────────────
-  // Applies the persisted mode + palette before first paint. Inline
-  // scripts are never re-executed on hydration, so this runs exactly
-  // once per page load.
-  const initScript = useMemo(
-    () =>
-      themeInitScript({
-        themes,
-        defaultMode,
-        defaultPalette: fallbackPalette,
-        modeStorageKey,
-        paletteStorageKey,
-        attribute,
-      }),
-    [
-      themes,
-      defaultMode,
-      fallbackPalette,
-      modeStorageKey,
-      paletteStorageKey,
-      attribute,
-    ]
-  )
-
   return (
     <ThemeProviderContext.Provider value={value}>
-      <script
-        suppressHydrationWarning
+      <ThemeScript
+        themes={themes}
+        defaultMode={defaultMode}
+        defaultPalette={fallbackPalette}
+        modeStorageKey={modeStorageKey}
+        paletteStorageKey={paletteStorageKey}
+        attribute={attribute}
         nonce={nonce}
-        dangerouslySetInnerHTML={{ __html: initScript }}
       />
       {children}
     </ThemeProviderContext.Provider>
