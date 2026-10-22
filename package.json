@@ -19,7 +19,24 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./script": {
+      "import": {
+        "types": "./dist/script.d.ts",
+        "default": "./dist/script.js"
+      },
+      "require": {
+        "types": "./dist/script.d.cts",
+        "default": "./dist/script.cjs"
+      }
+    },
     "./tailwind.css": "./css/tailwind.css"
+  },
+  "typesVersions": {
+    "*": {
+      "script": [
+        "./dist/script.d.ts"
+      ]
+    }
   },
   "files": [
     "dist",

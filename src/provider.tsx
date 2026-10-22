@@ -8,7 +8,9 @@ import {
   useState,
 } from "react"
 import type { ThemeMode, ThemeProviderProps, ThemeProviderState } from "./types"
-import { themeInitScript } from "./script"
+import { resolveThemeOptions } from "./options"
+import type { ResolvedThemeOptions } from "./options"
+import { getThemeScript } from "./script"
 
 const LINK_ATTR = "data-shadcn-palette"
 const PALETTE_ATTR = "data-palette"
@@ -23,16 +25,6 @@ const SWITCHING_ATTR = "data-switching"
 // during a client render triggers React's "scripts inside React components
 // are never executed when rendering on the client" warning; memoization
 // avoids it while the inline script still runs exactly once per page load.
-type ThemeScriptProps = {
-  themes: Record<string, string>
-  defaultMode: ThemeMode
-  defaultPalette: string
-  modeStorageKey: string
-  paletteStorageKey: string
-  attribute: "class" | "data-mode"
-  nonce?: string
-}
-
 const ThemeScript = memo(function ThemeScript({
   themes,
   defaultMode,
@@ -41,16 +33,17 @@ const ThemeScript = memo(function ThemeScript({
   paletteStorageKey,
   attribute,
   nonce,
-}: ThemeScriptProps) {
+}: ResolvedThemeOptions) {
   const initScript = useMemo(
     () =>
-      themeInitScript({
+      getThemeScript({
         themes,
         defaultMode,
         defaultPalette,
         modeStorageKey,
         paletteStorageKey,
         attribute,
+        nonce,
       }),
     [
       themes,
@@ -59,6 +52,7 @@ const ThemeScript = memo(function ThemeScript({
       modeStorageKey,
       paletteStorageKey,
       attribute,
+      nonce,
     ]
   )
 
@@ -88,17 +82,19 @@ export const ThemeProviderContext = createContext<ThemeProviderState | undefined
 
 export function ThemeProvider({
   children,
-  themes,
-  defaultMode = "system",
-  defaultPalette,
-  modeStorageKey = "shadcn-theme-mode",
-  paletteStorageKey = "shadcn-theme-palette",
-  attribute = "class",
-  nonce,
   disableTransitionOnChange = false,
+  ...options
 }: ThemeProviderProps) {
+  const {
+    themes,
+    defaultMode,
+    defaultPalette: fallbackPalette,
+    modeStorageKey,
+    paletteStorageKey,
+    attribute,
+    nonce,
+  } = resolveThemeOptions(options)
   const themeNames = useMemo(() => Object.keys(themes), [themes])
-  const fallbackPalette = defaultPalette ?? themeNames[0] ?? "default"
 
   const [mode, setModeState] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return defaultMode

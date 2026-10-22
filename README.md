@@ -7,7 +7,7 @@ Dual-axis theme provider for [shadcn/ui](https://ui.shadcn.com) — **mode** (li
 - Handles both dark mode and color palette switching independently
 - Runtime CSS injection — no build step needed for new palettes
 - Ships a Tailwind v4 token bridge CSS file
-- SSR/Next.js no-FOUC support — a pre-hydration inline script applies the persisted mode + palette before first paint
+- No-FOUC support for SSR/Next.js and client-only apps (Vite) — an inline script applies the persisted mode + palette before first paint
 - Zero runtime dependencies (React peer dep only)
 - System preference listener for live dark mode updates
 - CSP nonce support for injected stylesheets and the init script
@@ -135,6 +135,67 @@ export default function RootLayout({ children }) {
 > and `<`-escaped. Don't feed it untrusted user input. For strict CSP,
 > pass a `nonce` — it's applied to the init script and injected links.
 
+## Vite / client-only SPA — no flash of unthemed content
+
+In a client-only app nothing is server-rendered, so the script
+`<ThemeProvider>` renders arrives with React — after the first paint. A
+user who picked Light sees your `index.html` defaults (e.g. dark) until
+React mounts.
+
+Inline the same script into `index.html` at build time instead.
+`shadcn-theme-provider/script` exports it without depending on React, so
+your Vite config can import it. Keep the options in one React-free module
+so the script and the provider always agree:
+
+```ts
+// src/theme.ts
+import type { ThemeOptions } from "shadcn-theme-provider/script";
+
+export const themeOptions: ThemeOptions = {
+  themes: { default: "/themes/default.css", ocean: "/themes/ocean.css" },
+  defaultMode: "system",
+};
+```
+
+```ts
+// vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { getThemeScript } from "shadcn-theme-provider/script";
+import { themeOptions } from "./src/theme";
+
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      name: "theme-init-script",
+      transformIndexHtml: () => [
+        { tag: "script", children: getThemeScript(themeOptions), injectTo: "head-prepend" },
+      ],
+    },
+  ],
+});
+```
+
+```tsx
+// src/main.tsx
+<ThemeProvider {...themeOptions}>
+  <App />
+</ThemeProvider>
+```
+
+The script lands at the top of `<head>` in both `vite` dev and
+`vite build` output, so it runs before any module script and before the
+first paint. Notes:
+
+- A class on `<html>` in `index.html` (e.g. `class="dark"`) is fine —
+  the script replaces it.
+- Don't hard-code a `<link data-shadcn-palette>` in `index.html`. The
+  script only injects the palette stylesheet when none exists, so a static
+  link would show instead of the stored palette until React mounts.
+- For strict CSP, `nonce` in the options goes on the injected `<link>`;
+  put the same nonce on the script tag (`attrs: { nonce }`).
+
 ## Palette CSS Files
 
 Each palette is just a `.css` file with shadcn CSS variables for `:root` (light) and `.dark`. **You don't need to write these by hand** — copy-paste them directly from the tools you already use:
@@ -193,6 +254,20 @@ Adding a new palette to your app is as simple as dropping a CSS file into `publi
 | `attribute`                 | `"class" \| "data-mode"`        | `"class"`                | How mode is applied to `<html>`            |
 | `nonce`                     | `string`                        | —                        | CSP nonce for injected `<link>` tags       |
 | `disableTransitionOnChange` | `boolean`                       | `false`                  | Add `[data-switching]` during palette swap |
+
+### `getThemeScript(options)`
+
+```ts
+import { getThemeScript } from "shadcn-theme-provider/script";
+
+getThemeScript(options: ThemeOptions): string;
+```
+
+Returns the JavaScript source (no `<script>` tag) of the init script.
+`ThemeOptions` is `<ThemeProvider>`'s props minus `children` and
+`disableTransitionOnChange`, with the same defaults. The entry has no React
+dependency, so build configs can import it. See
+[Vite / client-only SPA](#vite--client-only-spa--no-flash-of-unthemed-content).
 
 ### `useTheme()`
 

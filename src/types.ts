@@ -1,21 +1,9 @@
-export type ThemeMode = "dark" | "light" | "system"
+import type { ThemeMode, ThemeOptions } from "./options"
 
-export type ThemeProviderProps = {
+export type { ThemeMode, ThemeOptions } from "./options"
+
+export type ThemeProviderProps = ThemeOptions & {
   children: React.ReactNode
-  /** Map of palette names to CSS file URLs, e.g. { default: "/themes/default.css" } */
-  themes: Record<string, string>
-  /** Initial mode. Default: "system" */
-  defaultMode?: ThemeMode
-  /** Initial palette name. Default: first key in `themes` */
-  defaultPalette?: string
-  /** localStorage key for mode. Default: "shadcn-theme-mode" */
-  modeStorageKey?: string
-  /** localStorage key for palette. Default: "shadcn-theme-palette" */
-  paletteStorageKey?: string
-  /** How mode is applied to `<html>`. Default: "class" */
-  attribute?: "class" | "data-mode"
-  /** CSP nonce for injected `<link>` tags */
-  nonce?: string
   /** Temporarily disable CSS transitions during palette switch */
   disableTransitionOnChange?: boolean
 }
