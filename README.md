@@ -109,7 +109,8 @@ runs **before first paint**: it reads the persisted mode and palette from
 `localStorage`, applies the `.dark`/`.light` class (or `data-mode`
 attribute) to `<html>`, and injects the palette stylesheet `<link>`. The
 provider's own effects detect the already-applied state and skip
-re-injection, so nothing flickers on hydration.
+re-injection, so nothing flickers on hydration. The script is rendered only
+on the server and during hydration; once hydrated, React drops it.
 
 The only setup needed: add `suppressHydrationWarning` to `<html>`, since
 the script updates its class/attributes before React hydrates (same
@@ -137,10 +138,10 @@ export default function RootLayout({ children }) {
 
 ## Vite / client-only SPA — no flash of unthemed content
 
-In a client-only app nothing is server-rendered, so the script
-`<ThemeProvider>` renders arrives with React — after the first paint. A
-user who picked Light sees your `index.html` defaults (e.g. dark) until
-React mounts.
+In a client-only app nothing is server-rendered, and a script React creates
+on the client never runs, so `<ThemeProvider>` renders no script there (that
+also avoids React 19.3's "Encountered a script tag" warning). Until React
+mounts, a user who picked Light sees your `index.html` defaults (e.g. dark).
 
 Inline the same script into `index.html` at build time instead.
 `shadcn-theme-provider/script` exports it without depending on React, so

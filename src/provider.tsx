@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react"
 import type { ThemeMode, ThemeProviderProps, ThemeProviderState } from "./types"
 import { resolveThemeOptions } from "./options"
@@ -17,14 +18,13 @@ const PALETTE_ATTR = "data-palette"
 const SWITCHING_ATTR = "data-switching"
 
 // ── Pre-hydration init script (no-FOUC for SSR) ─────────────────────
-// Applies the persisted mode + palette before first paint. Rendered as a
-// memoized component keyed only on the *stable* config props — NOT the
-// provider's mode/palette state — so it renders during SSR and the initial
-// hydration pass (matching the server HTML, no mismatch) but is never
-// re-rendered on the client when the theme changes. Re-rendering a <script>
-// during a client render triggers React's "scripts inside React components
-// are never executed when rendering on the client" warning; memoization
-// avoids it while the inline script still runs exactly once per page load.
+// Applies the persisted mode + palette before first paint. It renders only
+// during SSR and the hydration pass (matching the server HTML, no mismatch),
+// then unmounts once hydration settles on the client snapshot. Memoized on the
+// *stable* config props — NOT the provider's mode/palette state — so a theme
+// change during hydration never re-renders it. Rendering a <script> on the
+// client triggers React's "scripts inside React components are never executed
+// when rendering on the client" warning, and the script would not run anyway.
 const ThemeScript = memo(function ThemeScript({
   themes,
   defaultMode,
@@ -64,6 +64,22 @@ const ThemeScript = memo(function ThemeScript({
     />
   )
 })
+
+// React renders the server snapshot during server rendering and hydration,
+// and the client snapshot for a client-only render (and right after hydration).
+const subscribeToNothing = () => () => {}
+const isClientRender = () => false
+const isServerRender = () => true
+
+/**
+ * True while React renders on the server or hydrates server HTML. The init
+ * script is useful only there: a script React creates on the client never
+ * executes, and React 19.3+ reports rendering one. Client-only apps inline the
+ * same script into index.html through `shadcn-theme-provider/script`.
+ */
+function useServerRender() {
+  return useSyncExternalStore(subscribeToNothing, isClientRender, isServerRender)
+}
 
 function getSystemMode(): "light" | "dark" {
   if (typeof window === "undefined") return "light"
@@ -219,6 +235,8 @@ export function ThemeProvider({
   const setMode = useCallback((m: ThemeMode) => setModeState(m), [])
   const setPalette = useCallback((p: string) => setPaletteState(p), [])
 
+  const serverRender = useServerRender()
+
   const value = useMemo<ThemeProviderState>(
     () => ({
       mode,
@@ -233,15 +251,17 @@ export function ThemeProvider({
 
   return (
     <ThemeProviderContext.Provider value={value}>
-      <ThemeScript
-        themes={themes}
-        defaultMode={defaultMode}
-        defaultPalette={fallbackPalette}
-        modeStorageKey={modeStorageKey}
-        paletteStorageKey={paletteStorageKey}
-        attribute={attribute}
-        nonce={nonce}
-      />
+      {serverRender && (
+        <ThemeScript
+          themes={themes}
+          defaultMode={defaultMode}
+          defaultPalette={fallbackPalette}
+          modeStorageKey={modeStorageKey}
+          paletteStorageKey={paletteStorageKey}
+          attribute={attribute}
+          nonce={nonce}
+        />
+      )}
       {children}
     </ThemeProviderContext.Provider>
   )
