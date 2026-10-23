@@ -9,9 +9,15 @@ import {
   useSyncExternalStore,
 } from "react"
 import type { ThemeMode, ThemeProviderProps, ThemeProviderState } from "./types"
-import { resolveThemeOptions } from "./options"
+import {
+  hasPalette,
+  resolveThemeOptions,
+  toPalette,
+  toThemeMode,
+} from "./options"
 import type { ResolvedThemeOptions } from "./options"
 import { getThemeScript } from "./script"
+import { readStorage, writeStorage } from "./storage"
 
 const LINK_ATTR = "data-shadcn-palette"
 const PALETTE_ATTR = "data-palette"
@@ -78,23 +84,32 @@ const isServerRender = () => true
  * same script into index.html through `shadcn-theme-provider/script`.
  */
 function useServerRender() {
-  return useSyncExternalStore(subscribeToNothing, isClientRender, isServerRender)
+  return useSyncExternalStore(
+    subscribeToNothing,
+    isClientRender,
+    isServerRender
+  )
 }
 
 function getSystemMode(): "light" | "dark" {
-  if (typeof window === "undefined") return "light"
+  if (typeof window === "undefined" || !window.matchMedia) return "light"
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light"
 }
 
-function resolveMode(mode: ThemeMode): "light" | "dark" {
-  return mode === "system" ? getSystemMode() : mode
+function subscribeToSystemMode(onChange: () => void) {
+  if (!window.matchMedia) return () => {}
+  const mql = window.matchMedia("(prefers-color-scheme: dark)")
+  mql.addEventListener("change", onChange)
+  return () => mql.removeEventListener("change", onChange)
 }
 
-export const ThemeProviderContext = createContext<ThemeProviderState | undefined>(
-  undefined
-)
+const getServerSystemMode = () => "light" as const
+
+export const ThemeProviderContext = createContext<
+  ThemeProviderState | undefined
+>(undefined)
 
 export function ThemeProvider({
   children,
@@ -111,76 +126,77 @@ export function ThemeProvider({
     nonce,
   } = resolveThemeOptions(options)
   const themeNames = useMemo(() => Object.keys(themes), [themes])
+  const serverRender = useServerRender()
 
-  const [mode, setModeState] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return defaultMode
-    return (localStorage.getItem(modeStorageKey) as ThemeMode | null) ?? defaultMode
-  })
-
-  const [palette, setPaletteState] = useState<string>(() => {
-    if (typeof window === "undefined") return fallbackPalette
-    return localStorage.getItem(paletteStorageKey) ?? fallbackPalette
-  })
-
-  const [resolvedMode, setResolvedMode] = useState<"light" | "dark">(() =>
-    resolveMode(mode)
+  const [storedMode, setModeState] = useState(() =>
+    toThemeMode(readStorage(modeStorageKey), defaultMode)
   )
+  // An invalid stored mode falls back to the default, as in the init script.
+  // Hydration must first expose the same values as the server render.
+  const mode = toThemeMode(serverRender ? null : storedMode, defaultMode)
 
-  // Keep a ref to themes so the palette effect doesn't re-run on themes identity changes
+  const [storedPalette, setPaletteState] = useState(() =>
+    toPalette(themes, readStorage(paletteStorageKey), fallbackPalette)
+  )
+  // A stored palette may have been renamed or removed since, and `themes` can
+  // change while mounted; both fall back as the init script does.
+  const palette = toPalette(
+    themes,
+    serverRender ? null : storedPalette,
+    fallbackPalette
+  )
+  const href = hasPalette(themes, palette) ? themes[palette] : undefined
+
+  const systemMode = useSyncExternalStore(
+    mode === "system" ? subscribeToSystemMode : subscribeToNothing,
+    getSystemMode,
+    getServerSystemMode
+  )
+  const resolvedMode = mode === "system" ? systemMode : mode
+
+  // The setter stays stable while validating against the latest palette map.
   const themesRef = useRef(themes)
   themesRef.current = themes
 
   // ── Apply mode to <html> ──────────────────────────────────────────
   useEffect(() => {
-    const resolved = resolveMode(mode)
-    setResolvedMode(resolved)
+    // Do not overwrite the init script's stored choice during hydration.
+    if (serverRender) return
 
     const root = document.documentElement
     if (attribute === "class") {
+      root.removeAttribute("data-mode")
       root.classList.remove("light", "dark")
-      root.classList.add(resolved)
+      root.classList.add(resolvedMode)
     } else {
-      root.setAttribute("data-mode", resolved)
+      root.classList.remove("light", "dark")
+      root.setAttribute("data-mode", resolvedMode)
     }
-  }, [mode, attribute])
-
-  // ── Listen for system preference changes ──────────────────────────
-  useEffect(() => {
-    if (mode !== "system") return
-
-    const mql = window.matchMedia("(prefers-color-scheme: dark)")
-    const handler = (e: MediaQueryListEvent) => {
-      const resolved = e.matches ? "dark" : "light"
-      setResolvedMode(resolved)
-
-      const root = document.documentElement
-      if (attribute === "class") {
-        root.classList.remove("light", "dark")
-        root.classList.add(resolved)
-      } else {
-        root.setAttribute("data-mode", resolved)
-      }
-    }
-
-    mql.addEventListener("change", handler)
-    return () => mql.removeEventListener("change", handler)
-  }, [mode, attribute])
+  }, [resolvedMode, attribute, serverRender])
 
   // ── Load palette CSS ──────────────────────────────────────────────
   useEffect(() => {
-    const currentThemes = themesRef.current
-    const href = currentThemes[palette] ?? currentThemes[Object.keys(currentThemes)[0]]
-    if (!href) return
+    if (serverRender) return
 
     const root = document.documentElement
+    if (!href) {
+      document
+        .querySelectorAll(`link[${LINK_ATTR}]`)
+        .forEach((link) => link.remove())
+      root.removeAttribute(PALETTE_ATTR)
+      return
+    }
 
     // Skip if this palette is already applied (e.g. by the pre-hydration
     // init script) — removing and re-adding the link would cause a flash
-    const existing = document.querySelector<HTMLLinkElement>(`link[${LINK_ATTR}]`)
+    const existing = document.querySelector<HTMLLinkElement>(
+      `link[${LINK_ATTR}]`
+    )
     if (
       existing &&
       existing.getAttribute(LINK_ATTR) === palette &&
-      existing.getAttribute("href") === href
+      existing.getAttribute("href") === href &&
+      existing.nonce === (nonce ?? "")
     ) {
       root.setAttribute(PALETTE_ATTR, palette)
       return
@@ -192,9 +208,7 @@ export function ThemeProvider({
     }
 
     // Remove existing palette links
-    document
-      .querySelectorAll(`link[${LINK_ATTR}]`)
-      .forEach((n) => n.remove())
+    document.querySelectorAll(`link[${LINK_ATTR}]`).forEach((n) => n.remove())
 
     // Inject new palette link
     const link = document.createElement("link")
@@ -209,33 +223,48 @@ export function ThemeProvider({
 
     // Remove switching attribute after CSS loads (or on next frame as fallback)
     if (disableTransitionOnChange) {
-      const cleanup = () => {
+      let disposed = false
+      let frame: number | undefined
+      const finish = () => {
+        if (disposed || frame !== undefined) return
         // Use rAF to ensure the browser has applied the new styles
-        requestAnimationFrame(() => {
-          root.removeAttribute(SWITCHING_ATTR)
+        frame = requestAnimationFrame(() => {
+          if (!disposed) root.removeAttribute(SWITCHING_ATTR)
         })
       }
-      link.addEventListener("load", cleanup, { once: true })
+      link.addEventListener("load", finish, { once: true })
+      link.addEventListener("error", finish, { once: true })
       // Fallback in case load doesn't fire (e.g., cached)
-      const timer = setTimeout(cleanup, 100)
-      return () => clearTimeout(timer)
+      const timer = setTimeout(finish, 100)
+      return () => {
+        disposed = true
+        clearTimeout(timer)
+        if (frame !== undefined) cancelAnimationFrame(frame)
+        link.removeEventListener("load", finish)
+        link.removeEventListener("error", finish)
+        root.removeAttribute(SWITCHING_ATTR)
+      }
     }
-  }, [palette, nonce, disableTransitionOnChange])
+  }, [palette, href, nonce, disableTransitionOnChange, serverRender])
 
   // ── Persist to localStorage ───────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem(modeStorageKey, mode)
-  }, [mode, modeStorageKey])
+    if (!serverRender) writeStorage(modeStorageKey, mode)
+  }, [mode, modeStorageKey, serverRender])
 
   useEffect(() => {
-    localStorage.setItem(paletteStorageKey, palette)
-  }, [palette, paletteStorageKey])
+    if (serverRender) return
+    // Retire a removed choice so reintroducing its name cannot resurrect it.
+    setPaletteState(palette)
+    writeStorage(paletteStorageKey, palette)
+  }, [palette, paletteStorageKey, serverRender])
 
   // ── Stable setters ────────────────────────────────────────────────
   const setMode = useCallback((m: ThemeMode) => setModeState(m), [])
-  const setPalette = useCallback((p: string) => setPaletteState(p), [])
-
-  const serverRender = useServerRender()
+  // Unknown names are ignored, so the active palette always exists in `themes`.
+  const setPalette = useCallback((p: string) => {
+    if (hasPalette(themesRef.current, p)) setPaletteState(p)
+  }, [])
 
   const value = useMemo<ThemeProviderState>(
     () => ({

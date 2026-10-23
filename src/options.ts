@@ -45,3 +45,38 @@ export function resolveThemeOptions({
     nonce,
   }
 }
+
+const THEME_MODES: readonly string[] = ["light", "dark", "system"]
+
+/** `value` when it is a valid mode, otherwise `fallback`. */
+export function toThemeMode(
+  value: string | null | undefined,
+  fallback: ThemeMode
+): ThemeMode {
+  return value != null && THEME_MODES.includes(value)
+    ? (value as ThemeMode)
+    : fallback
+}
+
+/** Whether `name` is one of `themes` (own keys only, never inherited ones). */
+export function hasPalette(
+  themes: Record<string, string>,
+  name: string | null | undefined
+): name is string {
+  return name != null && Object.prototype.hasOwnProperty.call(themes, name)
+}
+
+/**
+ * `value` when it names one of `themes`; otherwise `fallback`, then the first
+ * theme. A stored palette can outlive a palette the app has since renamed or
+ * removed. The init script applies the same rule, so both always agree.
+ */
+export function toPalette(
+  themes: Record<string, string>,
+  value: string | null | undefined,
+  fallback: string
+): string {
+  if (hasPalette(themes, value)) return value
+  if (hasPalette(themes, fallback)) return fallback
+  return Object.keys(themes)[0] ?? ""
+}

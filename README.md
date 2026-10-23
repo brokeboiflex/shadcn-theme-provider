@@ -131,6 +131,12 @@ export default function RootLayout({ children }) {
 }
 ```
 
+The React entry preserves its `"use client"` boundary for Next.js. During server
+rendering and the first hydration render, `useTheme()` exposes the configured
+defaults (`resolvedMode` is `"light"` for system mode). It then exposes the browser's
+stored preferences and system mode. The init script applies those preferences
+before paint; hydration does not overwrite them with the server defaults.
+
 > The script's content is built exclusively from the props you pass
 > (`themes`, storage keys, defaults) — serialized with `JSON.stringify`
 > and `<`-escaped. Don't feed it untrusted user input. For strict CSP,
@@ -191,9 +197,8 @@ first paint. Notes:
 
 - A class on `<html>` in `index.html` (e.g. `class="dark"`) is fine —
   the script replaces it.
-- Don't hard-code a `<link data-shadcn-palette>` in `index.html`. The
-  script only injects the palette stylesheet when none exists, so a static
-  link would show instead of the stored palette until React mounts.
+- The script reuses a matching `<link data-shadcn-palette>` and replaces stale
+  links, so repeated execution keeps a single current palette stylesheet.
 - For strict CSP, `nonce` in the options goes on the injected `<link>`;
   put the same nonce on the script tag (`attrs: { nonce }`).
 
@@ -282,6 +287,17 @@ const {
   themes, // string[] — available palette names
 } = useTheme();
 ```
+
+If a saved palette was renamed or removed, the script and provider select
+`defaultPalette`, or the first registered palette if that default is also missing.
+`setPalette()` ignores unregistered names. An empty `themes` map exposes `palette: ""`
+and removes the palette stylesheet and `data-palette` attribute. Updating an active
+palette's URL updates its stylesheet without requiring a name change.
+
+Invalid stored modes fall back to `defaultMode`. When browser storage is blocked
+or full, theme switching still works for the mounted provider; persistence is
+best-effort. With `attribute="data-mode"`, your palette CSS and dark variant must
+target `[data-mode="dark"]`; the included Tailwind bridge uses `.dark` selectors.
 
 ### Disabling transitions on palette switch
 

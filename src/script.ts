@@ -19,10 +19,28 @@ export type { ThemeMode, ThemeOptions } from "./options"
  * runs this code needs its nonce set by whatever renders the tag.
  */
 export function getThemeScript(options: ThemeOptions): string {
+  // Mirrors toThemeMode() and toPalette() in options.ts: an invalid stored mode
+  // or a palette missing from `themes` falls back exactly as the provider does.
   // <-escape to keep "</script>" sequences from terminating the tag
   const json = JSON.stringify(resolveThemeOptions(options)).replace(
     /</g,
     "\\u003c"
   )
-  return `(function(c){try{var d=document,r=d.documentElement,m=null,p=null;try{m=localStorage.getItem(c.modeStorageKey);p=localStorage.getItem(c.paletteStorageKey)}catch(e){}m=m||c.defaultMode;var v=m==="system"?(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m;if(c.attribute==="class"){r.classList.remove("light","dark");r.classList.add(v)}else{r.setAttribute("data-mode",v)}p=p||c.defaultPalette;var h=c.themes[p];if(!h){p=c.defaultPalette;h=c.themes[p]}if(h&&!d.querySelector("link[data-shadcn-palette]")){var l=d.createElement("link");l.rel="stylesheet";l.href=h;l.setAttribute("data-shadcn-palette",p);if(c.nonce)l.nonce=c.nonce;d.head.appendChild(l);r.setAttribute("data-palette",p)}}catch(e){}})(${json})`
+  return `(function(c){try{
+var d=document,r=d.documentElement;
+var read=function(k){try{return localStorage.getItem(k)}catch(e){return null}};
+var m=read(c.modeStorageKey),p=read(c.paletteStorageKey);
+if(m!=="light"&&m!=="dark"&&m!=="system")m=c.defaultMode;
+var v=m==="system"?(typeof matchMedia==="function"&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"):m;
+r.classList.remove("light","dark");
+if(c.attribute==="class"){r.removeAttribute("data-mode");r.classList.add(v)}else{r.setAttribute("data-mode",v)}
+var t=c.themes,o=function(k){return k!=null&&Object.prototype.hasOwnProperty.call(t,k)};
+if(!o(p))p=o(c.defaultPalette)?c.defaultPalette:(Object.keys(t)[0]||"");
+var h=o(p)?t[p]:null,links=d.querySelectorAll("link[data-shadcn-palette]"),l=links[0];
+if(!h){links.forEach(function(n){n.remove()});r.removeAttribute("data-palette");return}
+if(!l||l.getAttribute("data-shadcn-palette")!==p||l.getAttribute("href")!==h||l.nonce!==(c.nonce||"")){
+links.forEach(function(n){n.remove()});l=d.createElement("link");l.rel="stylesheet";l.href=h;l.setAttribute("data-shadcn-palette",p);if(c.nonce)l.nonce=c.nonce;d.head.appendChild(l)
+}else{links.forEach(function(n){if(n!==l)n.remove()})}
+r.setAttribute("data-palette",p)
+}catch(e){}})(${json})`
 }
